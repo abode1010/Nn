@@ -1,4 +1,4 @@
-name: Persistent RDP with OpenVPN (No Save)
+name: Persistent RDP with OpenVPN (Auto IP, No Save)
 
 on:
   workflow_dispatch:
@@ -49,17 +49,20 @@ jobs:
               Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
           }
 
-      # عرض المعلومات في Logs
-      - name: Show RDP & VPN info
+      # جلب IP الخاص بالـ VPN تلقائيًا
+      - name: Get VPN IP
         run: |
-          $username = "PersistentRDP"
-          $password = "admin@123"
-          $vpnIP = (Invoke-WebRequest -Uri "http://ifconfig.me/ip").Content.Trim()
+          $vpnIP = (Get-NetIPAddress | Where-Object {$_.InterfaceAlias -like "*TAP*"} | Select-Object -First 1).IPAddress
+          if (-not $vpnIP) {
+              # fallback إذا لم يتم العثور على TAP adapter
+              $vpnIP = (Invoke-WebRequest -Uri "http://ifconfig.me/ip").Content.Trim()
+          }
+
           Write-Host "============================="
           Write-Host "✅ RDP & VPN Info"
           Write-Host "Address (VPN IP): $vpnIP"
-          Write-Host "Username: $username"
-          Write-Host "Password: $password"
+          Write-Host "Username: PersistentRDP"
+          Write-Host "Password: admin@123"
           Write-Host "============================="
 
       # الحفاظ على الجلسة نشطة
