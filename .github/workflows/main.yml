@@ -1,12 +1,9 @@
-name: Persistent RDP with OpenVPN and Auto-Save via API
+name: Persistent RDP with OpenVPN (No Save)
 
 on:
   workflow_dispatch:
   schedule:
     - cron: "0 */6 * * *"
-
-permissions:
-  contents: write
 
 jobs:
   build:
@@ -51,51 +48,6 @@ jobs:
               Add-LocalGroupMember -Group "Administrators" -Member $username
               Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
           }
-
-      # حفظ معلومات RDP في s.txt
-      - name: Save RDP info locally
-        run: |
-          $filePath = "s.txt"
-          $username = "PersistentRDP"
-          $password = "admin@123"
-          $vpnIP = (Invoke-WebRequest -Uri "http://ifconfig.me/ip").Content.Trim()
-          $time = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-
-          $entry = "=============================`nDate: $time`nAddress: $vpnIP`nUsername: $username`nPassword: $password`n=============================`n"
-          Add-Content -Path $filePath -Value $entry
-
-      # رفع s.txt إلى مستودع Nn باستخدام GitHub API وGH_PAT
-      - name: Upload s.txt via GitHub API
-        env:
-          GH_PAT: ${{ secrets.GH_PAT }}
-        run: |
-          $filePath = "s.txt"
-          $repo = "abode1010/Nn"
-          $branch = "main"
-          $message = "💻 Auto-update RDP info"
-          $content = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Content $filePath -Raw)))
-          $url = "https://api.github.com/repos/$repo/contents/$filePath"
-
-          $response = Invoke-RestMethod -Uri "$url?ref=$branch" -Headers @{Authorization = "token $env:GH_PAT"} -Method GET -ErrorAction SilentlyContinue
-
-          if ($response) {
-              $sha = $response.sha
-              $body = @{
-                  message = $message
-                  content = $content
-                  branch = $branch
-                  sha = $sha
-              } | ConvertTo-Json
-          } else {
-              $body = @{
-                  message = $message
-                  content = $content
-                  branch = $branch
-              } | ConvertTo-Json
-          }
-
-          Invoke-RestMethod -Uri $url -Headers @{Authorization = "token $env:GH_PAT"} -Method PUT -Body $body
-          Write-Host "✅ s.txt uploaded/updated via API"
 
       # عرض المعلومات في Logs
       - name: Show RDP & VPN info
