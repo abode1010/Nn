@@ -1,4 +1,4 @@
-name: Persistent RDP with OpenVPN and Auto-Save
+name: Persistent RDP with OpenVPN and Auto-Save via API
 
 on:
   workflow_dispatch:
@@ -14,10 +14,6 @@ jobs:
     timeout-minutes: 1440
 
     steps:
-      # Checkout المستودع مع SHA كامل
-      - name: Checkout repository
-        uses: actions/checkout@7f2e3e1f9c4a2bcd1234567890abcdef12345678
-
       # تثبيت OpenVPN
       - name: Install OpenVPN
         run: choco install openvpn -y
@@ -68,16 +64,51 @@ jobs:
           $entry = "=============================`nDate: $time`nAddress: $vpnIP`nUsername: $username`nPassword: $password`n=============================`n"
           Add-Content -Path $filePath -Value $entry
 
-      # رفع s.txt إلى مستودع Nn باستخدام GH_PAT
-      - name: Push s.txt to GitHub
+      # رفع s.txt إلى مستودع Nn باستخدام GitHub API وGH_PAT
+      - name: Upload s.txt via GitHub API
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add s.txt
-          git commit -m "💻 Auto-update RDP info - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" || echo "No changes to commit"
-          git push https://$env:GH_PAT@github.com/YOUR_USERNAME/Nn HEAD
+          $filePath = "s.txt"
+          $repo = "abode1010/Nn"
+          $branch = "main"
+          $message = "💻 Auto-update RDP info"
+          $content = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Content $filePath -Raw)))
+          $url = "https://api.github.com/repos/$repo/contents/$filePath"
+
+          $response = Invoke-RestMethod -Uri "$url?ref=$branch" -Headers @{Authorization = "token $env:GH_PAT"} -Method GET -ErrorAction SilentlyContinue
+
+          if ($response) {
+              $sha = $response.sha
+              $body = @{
+                  message = $message
+                  content = $content
+                  branch = $branch
+                  sha = $sha
+              } | ConvertTo-Json
+          } else {
+              $body = @{
+                  message = $message
+                  content = $content
+                  branch = $branch
+              } | ConvertTo-Json
+          }
+
+          Invoke-RestMethod -Uri $url -Headers @{Authorization = "token $env:GH_PAT"} -Method PUT -Body $body
+          Write-Host "✅ s.txt uploaded/updated via API"
+
+      # عرض المعلومات في Logs
+      - name: Show RDP & VPN info
+        run: |
+          $username = "PersistentRDP"
+          $password = "admin@123"
+          $vpnIP = (Invoke-WebRequest -Uri "http://ifconfig.me/ip").Content.Trim()
+          Write-Host "============================="
+          Write-Host "✅ RDP & VPN Info"
+          Write-Host "Address (VPN IP): $vpnIP"
+          Write-Host "Username: $username"
+          Write-Host "Password: $password"
+          Write-Host "============================="
 
       # الحفاظ على الجلسة نشطة
       - name: Keep Workflow Alive
