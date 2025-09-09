@@ -31,7 +31,6 @@ jobs:
           if (-not (Test-Path $ovpnPath)) {
               New-Item -ItemType File -Path $ovpnPath -Force
               Set-Content -Path $ovpnPath -Value $ovpnConfig -Encoding UTF8
-              Write-Host "✅ OpenVPN config saved"
           }
 
           $vpnRunning = Get-Process openvpn -ErrorAction SilentlyContinue
@@ -40,7 +39,6 @@ jobs:
                 -ArgumentList "--config `"$ovpnPath`"" `
                 -WindowStyle Hidden
               Start-Sleep -Seconds 25
-              Write-Host "✅ OpenVPN connected"
           }
 
       # تفعيل RDP وحساب دائم
@@ -56,9 +54,6 @@ jobs:
               New-LocalUser -Name $username -Password (ConvertTo-SecureString $password -AsPlainText -Force) -AccountNeverExpires
               Add-LocalGroupMember -Group "Administrators" -Member $username
               Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
-              Write-Host "✅ Created Persistent RDP account: $username"
-          } else {
-              Write-Host "✅ Using existing RDP account: $username"
           }
 
       # حفظ معلومات RDP في s.txt
@@ -72,21 +67,6 @@ jobs:
 
           $entry = "=============================`nDate: $time`nAddress: $vpnIP`nUsername: $username`nPassword: $password`n=============================`n"
           Add-Content -Path $filePath -Value $entry
-          Write-Host "✅ RDP info saved to $filePath"
-
-      # عرض المعلومات في Logs
-      - name: Show RDP & VPN info
-        run: |
-          $username = "PersistentRDP"
-          $password = "admin@123"
-          $vpnIP = (Invoke-WebRequest -Uri "http://ifconfig.me/ip").Content.Trim()
-
-          Write-Host "============================="
-          Write-Host "✅ RDP & VPN Info"
-          Write-Host "Address (VPN IP): $vpnIP"
-          Write-Host "Username: $username"
-          Write-Host "Password: $password"
-          Write-Host "============================="
 
       # رفع s.txt إلى مستودع Nn باستخدام GH_PAT
       - name: Push s.txt to GitHub
@@ -105,5 +85,4 @@ jobs:
           Write-Host "💻 RDP & VPN are running. Keeping session alive..."
           while ($true) {
               Start-Sleep -Seconds 300
-              Write-Host "[$(Get-Date)] Session active"
           }
