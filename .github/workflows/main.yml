@@ -1,44 +1,57 @@
-name: Persistent RDP with OpenVPN
+name: Persistent RDP with OpenVPN and Auto-Save
 
 on:
   workflow_dispatch:
   schedule:
     - cron: "0 */6 * * *"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
-    timeout-minutes: 360
+    timeout-minutes: 1440
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: true
+      # Checkout المستودع مع SHA كامل
+      - name: Checkout repository
+        uses: actions/checkout@7f2e3e1f9c4a2bcd1234567890abcdef12345678
 
+      # تثبيت OpenVPN
       - name: Install OpenVPN
         run: choco install openvpn -y
 
+      # الاتصال بالـ OpenVPN
       - name: Connect to OpenVPN
         run: |
           $ovpnConfig = "${{ secrets.OPENVPN_CONFIG }}"
-          Set-Content -Path "$env:TEMP\client.ovpn" -Value $ovpnConfig -Encoding UTF8
-          Start-Process -FilePath "C:\Program Files\OpenVPN\bin\openvpn.exe" `
-            -ArgumentList "--config `"$env:TEMP\client.ovpn`"" `
-            -WindowStyle Hidden
-          Start-Sleep -Seconds 25
-          Write-Host "✅ OpenVPN Connected"
+          $ovpnPath = "$env:ProgramData\OpenVPN\config\client.ovpn"
 
-      - name: Enable RDP and Use Persistent Account
+          if (-not (Test-Path $ovpnPath)) {
+              New-Item -ItemType File -Path $ovpnPath -Force
+              Set-Content -Path $ovpnPath -Value $ovpnConfig -Encoding UTF8
+              Write-Host "✅ OpenVPN config saved"
+          }
+
+          $vpnRunning = Get-Process openvpn -ErrorAction SilentlyContinue
+          if (-not $vpnRunning) {
+              Start-Process -FilePath "C:\Program Files\OpenVPN\bin\openvpn.exe" `
+                -ArgumentList "--config `"$ovpnPath`"" `
+                -WindowStyle Hidden
+              Start-Sleep -Seconds 25
+              Write-Host "✅ OpenVPN connected"
+          }
+
+      # تفعيل RDP وحساب دائم
+      - name: Enable RDP and Persistent Account
         run: |
           $username = "PersistentRDP"
           $password = "admin@123"
 
-          # تفعيل RDP
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\' -name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-          # إنشاء الحساب فقط إذا لم يكن موجود
           if (-not (Get-LocalUser -Name $username -ErrorAction SilentlyContinue)) {
               New-LocalUser -Name $username -Password (ConvertTo-SecureString $password -AsPlainText -Force) -AccountNeverExpires
               Add-LocalGroupMember -Group "Administrators" -Member $username
@@ -48,18 +61,49 @@ jobs:
               Write-Host "✅ Using existing RDP account: $username"
           }
 
-          # حفظ البيانات في الملف s.txt
+      # حفظ معلومات RDP في s.txt
+      - name: Save RDP info locally
+        run: |
           $filePath = "s.txt"
+          $username = "PersistentRDP"
+          $password = "admin@123"
           $vpnIP = (Invoke-WebRequest -Uri "http://ifconfig.me/ip").Content.Trim()
           $time = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 
           $entry = "=============================`nDate: $time`nAddress: $vpnIP`nUsername: $username`nPassword: $password`n=============================`n"
           Add-Content -Path $filePath -Value $entry
-          Write-Host "✅ Added RDP info to file: $filePath"
+          Write-Host "✅ RDP info saved to $filePath"
 
-          # رفع الملف للمستودع تلقائيًا
+      # عرض المعلومات في Logs
+      - name: Show RDP & VPN info
+        run: |
+          $username = "PersistentRDP"
+          $password = "admin@123"
+          $vpnIP = (Invoke-WebRequest -Uri "http://ifconfig.me/ip").Content.Trim()
+
+          Write-Host "============================="
+          Write-Host "✅ RDP & VPN Info"
+          Write-Host "Address (VPN IP): $vpnIP"
+          Write-Host "Username: $username"
+          Write-Host "Password: $password"
+          Write-Host "============================="
+
+      # رفع s.txt إلى مستودع Nn باستخدام GH_PAT
+      - name: Push s.txt to GitHub
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git add $filePath
-          git commit -m "💻 Auto-update RDP info - $time" || echo "No changes to commit"
-          git push origin HEAD
+          git add s.txt
+          git commit -m "💻 Auto-update RDP info - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" || echo "No changes to commit"
+          git push https://$env:GH_PAT@github.com/YOUR_USERNAME/Nn HEAD
+
+      # الحفاظ على الجلسة نشطة
+      - name: Keep Workflow Alive
+        run: |
+          Write-Host "💻 RDP & VPN are running. Keeping session alive..."
+          while ($true) {
+              Start-Sleep -Seconds 300
+              Write-Host "[$(Get-Date)] Session active"
+          }
